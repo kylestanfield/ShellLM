@@ -1,10 +1,13 @@
 # Binaries
 shelllm_server
+shelllm-daemon
+slm
 
 # Dependencies (Platform-specific)
 onnxruntime-*/
 onnxruntime-*.tgz
-lib/*/
+lancedb.tar.gz
+lib/
 include/lancedb.h
 
 # Runtime files
@@ -18,3 +21,5 @@ src/internal/all_minilm/model.onnx
 
 # OS-specific
 .DS_Store
+
+.env
