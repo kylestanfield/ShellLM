@@ -25,7 +25,7 @@ Rather than relying on keyword-based history searches, ShellLM implements a loca
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-username/shelllm.git
+    git clone https://github.com/kylestanfield/shelllm.git
     cd shelllm
     ```
 

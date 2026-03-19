@@ -19,6 +19,7 @@ import (
 	"github.com/lancedb/lancedb-go/pkg/lancedb"
 	allminilm "kylestanfield.com/shelllm/src/internal/all_minilm"
 
+	"github.com/joho/godotenv"
 	"google.golang.org/genai"
 )
 
@@ -34,7 +35,7 @@ const vectorColumnName string = "vector"
 const kMostSimilar int = 5
 
 // Gemini consts
-const systemPrompt string = "You are answering user queries from a command line tool that tracks bash command history and output for added contest. The command context is:\n"
+const systemPrompt string = "You are answering user queries from a command line tool that tracks bash command history and output for added contest. Make sure your output is formatted nicely for displaying in a Linux or MacOS terminal. The command context is:\n"
 
 // all mini llm has 384 dimension embeddings
 const EmbeddingDimensions int = 384
@@ -73,12 +74,12 @@ func openOrCreateDatabase(ctx context.Context) (contracts.ITable, *arrow.Schema,
 			if err != nil {
 				return nil, nil, err
 			}
-			fmt.Println("Existing table found.")
+			debugLog("Existing table found.")
 			return table, arrowSchema, nil
 		}
 	}
 	// otherwise create the table
-	fmt.Println("Table not found. Creating new table")
+	debugLog("Table not found. Creating new table")
 	schema, err := lancedb.NewSchema(arrowSchema)
 	if err != nil {
 		return nil, nil, err
@@ -147,7 +148,7 @@ func ReadAndHandleCommand(ctx context.Context,
 	if res.Command == "" && res.Output == "" {
 		return nil
 	}
-	fmt.Fprintf(os.Stdout, "Decoded command info: %+v\n", res)
+	debugLog("Decoded command info: %+v", res)
 	if err != nil {
 		if err == io.EOF {
 			// Connection closed
@@ -156,7 +157,7 @@ func ReadAndHandleCommand(ctx context.Context,
 		fmt.Fprintf(os.Stderr, "Failed to read from connection: %v\n", err)
 		return err
 	}
-	fmt.Printf("Read command over connection: %+v\n", res)
+	debugLog("Read command over connection: %+v", res)
 	// Call the vector embedding library to get the vector for
 	// command result
 	cmdEmbedding, err := GenerateEmbedding(ctx, res.String(), model)
@@ -171,7 +172,7 @@ func ReadAndHandleCommand(ctx context.Context,
 		fmt.Fprintf(os.Stderr, "Failed to save record to table for %+v\n%v\n", res, err)
 		return err
 	}
-	fmt.Println("Saved vector to the database!")
+	debugLog("Saved vector to the database!")
 	return nil
 }
 
@@ -181,7 +182,7 @@ func handleConnection(ctx context.Context,
 	db contracts.ITable,
 	schema *arrow.Schema) {
 
-	fmt.Println("Handling connection")
+	debugLog("Handling connection")
 	defer connection.Close()
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*15)
@@ -191,7 +192,7 @@ func handleConnection(ctx context.Context,
 
 	for {
 		if timeoutCtx.Err() != nil {
-			fmt.Println("Connection handler stopping: timeout")
+			debugLog("Connection handler stopping: timeout")
 			return
 		}
 		err := ReadAndHandleCommand(timeoutCtx, decoder, model, db, schema)
@@ -202,12 +203,21 @@ func handleConnection(ctx context.Context,
 }
 
 func parseResultToCommand(resultMap []map[string]interface{}) []CommandResult {
-	slice := make([]CommandResult, kMostSimilar)
+	slice := make([]CommandResult, 0, len(resultMap))
 	for _, row := range resultMap {
+		rc := 0
+		switch v := row["returncode"].(type) {
+		case float64:
+			rc = int(v)
+		case int32:
+			rc = int(v)
+		case int:
+			rc = v
+		}
 		res := CommandResult{
 			Command:    row["command"].(string),
 			Output:     row["output"].(string),
-			ReturnCode: row["returncode"].(int),
+			ReturnCode: rc,
 		}
 		slice = append(slice, res)
 	}
@@ -246,7 +256,7 @@ func handleQuery(ctx context.Context,
 		return
 	}
 	userQuery := string(buf)
-	fmt.Println("Received user query %s", userQuery)
+	debugLog("Received user query %s", userQuery)
 
 	// generate embedding for query
 	embedding, err := GenerateEmbedding(ctx, userQuery, model)
@@ -257,32 +267,36 @@ func handleQuery(ctx context.Context,
 		return
 	}
 	cmdSlice := parseResultToCommand(resultMap)
+	debugLog("Retrieved context from database:")
+	for i, cmd := range cmdSlice {
+		debugLog("  [%d] Command: %s | RC: %d | Output (truncated): %.100s...", i, cmd.Command, cmd.ReturnCode, cmd.Output)
+	}
 	geminiResponse, err := gemini.Models.GenerateContent(
 		ctx,
-		"gemini-3.1-flash",
+		"gemini-flash-latest",
 		genai.Text(systemPrompt+createContext(cmdSlice)+" The user query is: "+userQuery),
 		nil,
 	)
 	if err != nil {
-		log.Println("Failed to query Gemini gemini-3.1-flash")
+		debugLog("Failed to query Gemini gemini-3.1-flash %v", err)
 		return
 	}
 	if len(geminiResponse.Candidates) > 0 && len(geminiResponse.Candidates[0].Content.Parts) > 0 {
 		conn.Write([]byte(geminiResponse.Candidates[0].Content.Parts[0].Text))
 		return
 	}
-	log.Println("Malformed response from Gemini")
+	debugLog("Malformed response from Gemini")
 }
 
 func main() {
-	fmt.Println("Entering main function")
+	debugLog("Entering main function")
 	ctx := context.Background()
 	// 0. setup all-MiniLM-L6-v2 model for sentence embeddings
 	model, err := allminilm.NewModel()
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Successfully loaded embedding model")
+	debugLog("Successfully loaded embedding model")
 	defer model.Close()
 	// 1. connect to the vector DB
 	// create it if it doesn't exist
@@ -292,6 +306,11 @@ func main() {
 	}
 
 	// 2. Setup Gemini connection
+	err = godotenv.Load()
+
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
 	geminiClient, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey:  os.Getenv("GEMINI_API_KEY"),
 		Backend: genai.BackendGeminiAPI,
@@ -313,7 +332,7 @@ func main() {
 	}
 	// 4. listen for command history
 	go func() {
-		fmt.Printf("Listening for history on socket %s\n", historySocket)
+		debugLog("Listening for history on socket %s", historySocket)
 		for {
 			conn, err := historyListener.Accept()
 			if err != nil {
@@ -326,7 +345,7 @@ func main() {
 
 	// 5. listen for user queries
 	queryListener, _ := net.Listen("unix", querySocket)
-	fmt.Printf("Listening for queries on socket %s", querySocket)
+	debugLog("Listening for queries on socket %s", querySocket)
 	for {
 		conn, err := queryListener.Accept()
 		if err != nil {

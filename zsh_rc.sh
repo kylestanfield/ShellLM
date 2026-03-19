@@ -1,6 +1,6 @@
 # 1. Configuration
 export SHELLLM_OUT="/tmp/shelllm.vlog"
-export SHELLLM_SOCKET="/tmp/shelllm.socket"
+export SHELLLM_SOCKET="/tmp/shelllm.history.socket"
 touch "$SHELLLM_OUT"
 
 # Save original terminal FDs (File Descriptors)
@@ -20,8 +20,8 @@ _shelllm_precmd() {
         sleep 0.02
 
         if [[ -s "$SHELLLM_OUT" ]]; then
-            # Zsh history expansion for the last command executed
-            local last_cmd=$history[$((HISTCMD-1))]
+            # Use history command which is more reliable than $history array in some setups
+            local last_cmd=$(history -n -1 | sed 's/^[ ]*//')
             local cmd_output=$(<"$SHELLLM_OUT")
 
             ( jq -n \
@@ -29,7 +29,7 @@ _shelllm_precmd() {
                 --arg out "$cmd_output" \
                 --arg code "$exit_code" \
                 '{Command: $cmd, Output: $out, ReturnCode: ($code|tonumber)}' | \
-              nc -U -N -w 1 "$SHELLLM_SOCKET" >/dev/null 2>&1 ) &! 
+              nc -U -w 1 "$SHELLLM_SOCKET" >/dev/null 2>&1 ) &! 
 
             # Clear the log file for the next run
             true > "$SHELLLM_OUT"
@@ -48,9 +48,13 @@ _shelllm_preexec() {
     # Use Zsh regex matching (~ =)
     if [[ "$cmd" =~ $ALLOWED_TOOLS ]]; then
         export SHELLLM_CAPTURING="true"
-        # On macOS/Zsh, we use 'stdbuf' (if installed via brew) or simply tee
-        # Note: If stdbuf isn't found, you can just use: exec > >(tee -a "$SHELLLM_OUT") 2>&1
-        exec > >(stdbuf -oL tee -a "$SHELLLM_OUT") 2>&1
+        # On macOS, stdbuf is part of coreutils (brew install coreutils). 
+        # We fallback to direct tee if it's missing.
+        if command -v stdbuf >/dev/null 2>&1; then
+            exec > >(stdbuf -oL tee -a "$SHELLLM_OUT") 2>&1
+        else
+            exec > >(tee -a "$SHELLLM_OUT") 2>&1
+        fi
     fi
 }
 

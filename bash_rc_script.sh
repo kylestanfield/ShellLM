@@ -2,7 +2,7 @@
 
 # 1. Configuration
 export SHELLLM_OUT="/tmp/shelllm.vlog"
-export SHELLLM_SOCKET="/tmp/shelllm.socket"
+export SHELLLM_SOCKET="/tmp/shelllm.history.socket"
 touch "$SHELLLM_OUT"
 
 # Save original terminal FDs
@@ -31,7 +31,7 @@ _shelllm_postexec() {
                 --arg out "$cmd_output" \
                 --arg code "$exit_code" \
                 '{Command: $cmd, Output: $out, ReturnCode: ($code|tonumber)}' | \
-              nc -U -N -w 1 "$SHELLLM_SOCKET" >/dev/null 2>&1 ) & disown
+              nc -U -w 1 "$SHELLLM_SOCKET" >/dev/null 2>&1 ) & disown
 
             true > "$SHELLLM_OUT"
         fi
@@ -49,8 +49,12 @@ _shelllm_preexec() {
     # Check if the command starts with an allowed tool
     if [[ "$BASH_COMMAND" =~ $ALLOWED_TOOLS ]]; then
         export SHELLLM_CAPTURING="true"
-        # Line-buffered capture
-        exec > >(stdbuf -oL tee -a "$SHELLLM_OUT") 2>&1
+        # Line-buffered capture if stdbuf is available, otherwise direct tee
+        if command -v stdbuf >/dev/null 2>&1; then
+            exec > >(stdbuf -oL tee -a "$SHELLLM_OUT") 2>&1
+        else
+            exec > >(tee -a "$SHELLLM_OUT") 2>&1
+        fi
     fi
 }
 
