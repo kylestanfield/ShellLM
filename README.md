@@ -29,27 +29,16 @@ Rather than relying on keyword-based history searches, ShellLM implements a loca
     cd shelllm
     ```
 
-2.  **Download ONNX Runtime (v1.24.3):**
-    The server requires the ONNX Runtime shared library. Download the appropriate package from the [official releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.24.3):
-    - **Linux x64:** `onnxruntime-linux-x64-1.24.3.tgz`
-    - **macOS ARM64:** `onnxruntime-osx-arm64-1.24.3.tgz`
+2.  **Download Dependencies:**
+    ShellLM requires the ONNX Runtime, the LanceDB native libraries, and the pre-trained all-MiniLM-L6-v2 model. The included `Makefile` automates these downloads for your platform.
 
-    Extract the archive and ensure the resulting folder is in the project root (e.g., `onnxruntime-linux-x64-1.24.3/`).
+    **Note:** The initial build will prompt for confirmation as it may download ~500MB of dependencies.
 
-3.  **Configure LanceDB Native Libraries:**
-    ShellLM uses CGO bindings for LanceDB. You need the `liblancedb_go` shared library and headers:
-    - **Headers:** Ensure `include/lancedb.h` is present. This is typically bundled with the `lancedb-go` source or can be retrieved from the [LanceDB repository](https://github.com/lancedb/lancedb).
-    - **Shared Library:** Place the platform-specific `liblancedb_go.so` (Linux) or `liblancedb_go.dylib` (macOS) into the appropriate subdirectory:
-        - Linux: `lib/linux_amd64/`
-        - macOS (M5): `lib/darwin_arm64/`
-
-4.  **Build the Server:**
-    The project uses a `Makefile` to manage the CGO configuration and RPATH:
     ```bash
     make build
     ```
 
-5.  **Shell Integration:**
+3.  **Shell Integration:**
     Source the provided integration script in your `.bashrc`:
     ```bash
     echo "source $(pwd)/bash_rc_script.sh" >> ~/.bashrc

@@ -8,6 +8,7 @@ lib/*/
 include/lancedb.h
 
 # Runtime files
+src/internal/all_minilm/model.onnx
 *.socket
 /tmp/shelllm.vlog
 /tmp/shelllm.socket

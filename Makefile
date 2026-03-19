@@ -36,12 +36,43 @@ endif
 
 ONNX_LIB=$(ONNX_DIR)/lib/libonnxruntime.$(LIB_EXT)
 
-.PHONY: all build run clean help
+# Download URLs
+MODEL_PATH=src/internal/all_minilm/model.onnx
+MODEL_URL=https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx
+
+ifeq ($(OS),linux)
+	ONNX_URL=https://github.com/microsoft/onnxruntime/releases/download/v1.24.3/onnxruntime-linux-x64-1.24.3.tgz
+else
+	ONNX_URL=https://github.com/microsoft/onnxruntime/releases/download/v1.24.3/onnxruntime-osx-arm64-1.24.3.tgz
+endif
+
+.PHONY: all build run clean help fetch-model fetch-onnx confirm
 
 all: build
 
+confirm:
+	@echo -n "This may download several hundred MBs of dependencies. Continue? [y/N] " && read ans && [ $${ans:-N} = y ]
+
+## fetch-onnx: Download and extract ONNX Runtime if missing
+fetch-onnx:
+	@if [ ! -d $(ONNX_DIR) ]; then \
+		$(MAKE) confirm; \
+		echo "Downloading ONNX Runtime from $(ONNX_URL)..."; \
+		curl -L -o onnxruntime.tgz $(ONNX_URL); \
+		tar -xzf onnxruntime.tgz; \
+		rm onnxruntime.tgz; \
+	fi
+
+## fetch-model: Download the ONNX model if it is missing
+fetch-model:
+	@if [ ! -f $(MODEL_PATH) ]; then \
+		if [ ! -d $(ONNX_DIR) ]; then $(MAKE) confirm; fi; \
+		echo "Downloading $(MODEL_PATH) from Hugging Face..."; \
+		curl -L -o $(MODEL_PATH) $(MODEL_URL); \
+	fi
+
 ## build: Compile the shelllm_server binary
-build:
+build: fetch-onnx fetch-model
 	@echo "Building for $(OS)_$(GO_ARCH)..."
 	CGO_CFLAGS="-I$(INC_DIR)" \
 	CGO_LDFLAGS="-L$(LIB_DIR) -Wl,-rpath,$(LIB_DIR)" \
