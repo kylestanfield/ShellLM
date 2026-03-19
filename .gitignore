@@ -1,0 +1,19 @@
+# Binaries
+shelllm_server
+
+# Dependencies (Platform-specific)
+onnxruntime-*/
+onnxruntime-*.tgz
+lib/*/
+include/lancedb.h
+
+# Runtime files
+*.socket
+/tmp/shelllm.vlog
+/tmp/shelllm.socket
+/tmp/shelllm.history.socket
+/tmp/shelllm.query.socket
+/tmp/testdb/
+
+# OS-specific
+.DS_Store
