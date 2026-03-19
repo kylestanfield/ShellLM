@@ -24,6 +24,7 @@ const querySocket string = "/tmp/shelllm.query.socket"
 
 const dbPath string = "/tmp/testdb"
 const tableName string = "CommandHistory"
+
 // all mini llm has 384 dimension embeddings
 const EmbeddingDimensions int = 384
 
@@ -70,16 +71,16 @@ func openOrCreateDatabase(ctx context.Context) (contracts.ITable, *arrow.Schema,
 }
 
 type CommandResult struct {
-	Command 	string
-	Output		string
-	ReturnCode	int
+	Command    string
+	Output     string
+	ReturnCode int
 }
 
 func SaveCommandResult(ctx context.Context,
-						res CommandResult,
-						embedding []float32,
-						table contracts.ITable,
-						schema *arrow.Schema) error {
+	res CommandResult,
+	embedding []float32,
+	table contracts.ITable,
+	schema *arrow.Schema) error {
 	pool := memory.NewGoAllocator()
 	builder := array.NewRecordBuilder(pool, schema)
 	defer builder.Release()
@@ -88,37 +89,42 @@ func SaveCommandResult(ctx context.Context,
 	// columnar db has no auto-increment
 	// use timestamp as an id
 	id := int32(time.Now().UnixNano() % 2147483647)
-    builder.Field(0).(*array.Int32Builder).Append(id) // Assuming ID 1 or auto-increment logic
-    builder.Field(1).(*array.StringBuilder).Append(res.Command)
-    builder.Field(2).(*array.StringBuilder).Append(res.Output)
-    builder.Field(3).(*array.Int32Builder).Append(int32(res.ReturnCode))
+	builder.Field(0).(*array.Int32Builder).Append(id) // Assuming ID 1 or auto-increment logic
+	builder.Field(1).(*array.StringBuilder).Append(res.Command)
+	builder.Field(2).(*array.StringBuilder).Append(res.Output)
+	builder.Field(3).(*array.Int32Builder).Append(int32(res.ReturnCode))
 
-    // 4. Fill the Vector (FixedSizeList)
-    // We get the ListBuilder, then get its internal ValueBuilder (Float32)
-    listBuilder := builder.Field(4).(*array.FixedSizeListBuilder)
-    valueBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+	// 4. Fill the Vector (FixedSizeList)
+	// We get the ListBuilder, then get its internal ValueBuilder (Float32)
+	listBuilder := builder.Field(4).(*array.FixedSizeListBuilder)
+	valueBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
 
-    listBuilder.Append(true) // Start a new list entry
-    valueBuilder.AppendValues(embedding, nil) // Append all floats at once
+	listBuilder.Append(true)                  // Start a new list entry
+	valueBuilder.AppendValues(embedding, nil) // Append all floats at once
 
-    // 5. Generate the Record
-    record := builder.NewRecord()
+	// 5. Generate the Record
+	record := builder.NewRecord()
 	defer record.Release()
 	return table.Add(ctx, record, nil)
 }
 
+func GenerateEmbedding(ctx context.Context, result CommandResult, model *allminilm.Model) ([]float32, error) {
+	return model.Compute(result.Command+" "+result.Output, false)
+}
+
 func ReadAndHandleCommand(ctx context.Context,
-							decoder *json.Decoder,
-							model *allminilm.Model,
-							db contracts.ITable,
-							schema *arrow.Schema) error {
+	decoder *json.Decoder,
+	model *allminilm.Model,
+	db contracts.ITable,
+	schema *arrow.Schema) error {
+
 	var res CommandResult
 	err := decoder.Decode(&res)
 	if res.Command == "" && res.Output == "" {
 		return nil
 	}
 	fmt.Fprintf(os.Stdout, "Decoded command info: %+v\n", res)
-	if err != nil  {
+	if err != nil {
 		if err == io.EOF {
 			// Connection closed
 			return err
@@ -129,14 +135,14 @@ func ReadAndHandleCommand(ctx context.Context,
 	fmt.Printf("Read command over connection: %+v\n", res)
 	// Call the vector embedding library to get the vector for
 	// command result
-	baseEmbedding, err := model.Compute(res.Command + " " +  res.Output, false)
+	cmdEmbedding, err := GenerateEmbedding(ctx, res, model)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to generate embedding for %+v\n%v\n", res, err)
 		return err
 	}
 
 	// write vector to the vectorDB
-	err = SaveCommandResult(ctx, res, baseEmbedding, db, schema)
+	err = SaveCommandResult(ctx, res, cmdEmbedding, db, schema)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to save record to table for %+v\n%v\n", res, err)
 		return err
@@ -145,16 +151,16 @@ func ReadAndHandleCommand(ctx context.Context,
 	return nil
 }
 
-func handleConnection(ctx context.Context, 
-						connection net.Conn,
-						model *allminilm.Model,
-						db contracts.ITable,
-						schema *arrow.Schema) {
+func handleConnection(ctx context.Context,
+	connection net.Conn,
+	model *allminilm.Model,
+	db contracts.ITable,
+	schema *arrow.Schema) {
 
 	fmt.Println("Handling connection")
 	defer connection.Close()
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Second * 15)
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Second*15)
 	defer cancel()
 
 	decoder := json.NewDecoder(connection)
@@ -172,15 +178,14 @@ func handleConnection(ctx context.Context,
 }
 
 func handleQuery(ctx context.Context, conn net.Conn, model *allminilm.Model, table contracts.ITable) {
-
 	// Read user query
 	buf := make([]byte, 2048)
 	bytesRead, err := conn.Read(buf)
-	
+
 }
 
 func main() {
-    fmt.Println("Entering main function")
+	fmt.Println("Entering main function")
 	ctx := context.Background()
 	// 0. setup all-MiniLM-L6-v2 model for sentence embeddings
 	model, err := allminilm.NewModel()
@@ -201,8 +206,8 @@ func main() {
 	// and another socket for handling queries
 	_ = os.Remove(historySocket)
 	_ = os.Remove(querySocket)
-	
-	// 
+
+	//
 	historyListener, err := net.Listen("unix", historySocket)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create Unix socket: %v\n", err)
@@ -219,8 +224,6 @@ func main() {
 			go handleConnection(ctx, conn, model, table, schema)
 		}
 	}()
-
-
 
 	// 4. listen for user queries
 	queryListener, _ := net.Listen("unix", querySocket)
