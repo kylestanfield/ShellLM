@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -20,10 +21,10 @@ func main() {
 	if err != nil || bytesRead <= 0 {
 		log.Fatalf("Failed to write query to ShellLM server %v", err)
 	}
-	responseBuffer := make([]byte, 2048)
-	bytesRead, err = conn.Read(responseBuffer)
-	if err != nil || bytesRead <= 0 {
+	
+	responseBytes, err := io.ReadAll(conn)
+	if err != nil {
 		log.Fatalf("Failed to read response from ShellLM server %v", err)
 	}
-	fmt.Println(string(responseBuffer))
+	fmt.Println(string(responseBytes))
 }

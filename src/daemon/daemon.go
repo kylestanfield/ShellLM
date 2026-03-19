@@ -248,6 +248,8 @@ func handleQuery(ctx context.Context,
 	table contracts.ITable,
 	gemini *genai.Client) {
 
+	defer conn.Close()
+
 	// Read user query
 	buf := make([]byte, 2048)
 	bytesRead, err := conn.Read(buf)
