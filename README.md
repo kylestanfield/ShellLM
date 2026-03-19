@@ -8,8 +8,9 @@ Rather than relying on keyword-based history searches, ShellLM implements a loca
 
 ## Architecture
 
-- **Capture:** Bash code to add to your .bashrc (`bash_rc_script.sh`) that transmits commands and output to the server over Unix sockets.
-- **Server:** A Go-based orchestrator (`shelllm_server`) responsible for generating embeddings, writing to the DB, and handling queries.
+- **Capture:** Shell hooks (`bash_rc_script.sh` and `zsh_rc.sh`) transmit commands and output to the daemon over Unix sockets.
+- **Daemon:** A Go-based orchestrator (`shelllm-daemon`) responsible for generating embeddings, writing to the DB, and handling queries.
+- **CLI:** A lightweight frontend (`slm`) for querying your history using natural language.
 - **Storage:** LanceDB for efficient, local vector storage and retrieval.
 - **Inference:** Local execution of the ONNX runtime for sentence embeddings.
 
@@ -18,8 +19,7 @@ Rather than relying on keyword-based history searches, ShellLM implements a loca
 ### Prerequisites
 
 - **Go 1.26+**
-- **ONNX Runtime:** Shared libraries appropriate for your host platform (e.g., Linux x64 or Darwin arm64).
-- **LanceDB C++ Headers:** Required for the CGO bindings.
+- **ONNX Runtime & LanceDB:** The `Makefile` will automatically download the correct shared libraries for your platform (Linux/macOS).
 
 ### Installation
 
@@ -29,34 +29,54 @@ Rather than relying on keyword-based history searches, ShellLM implements a loca
     cd shelllm
     ```
 
-2.  **Download Dependencies:**
-    ShellLM requires the ONNX Runtime, the LanceDB native libraries, and the pre-trained all-MiniLM-L6-v2 model. The included `Makefile` automates these downloads for your platform.
-
-    **Note:** The initial build will prompt for confirmation as it may download ~500MB of dependencies.
+2.  **Build and Install:**
+    This will download necessary models and libraries (~500MB), compile the binaries, and install the `slm` command to `/usr/local/bin`.
 
     ```bash
     make build
+    sudo make install
     ```
 
 3.  **Shell Integration:**
-    Source the provided integration script in your `.bashrc`:
+    Add the hook to your shell configuration file.
+
+    **For Bash (`~/.bashrc`):**
     ```bash
-    echo "source $(pwd)/bash_rc_script.sh" >> ~/.bashrc
+    source /path/to/shelllm/bash_rc_script.sh
     ```
 
+    **For Zsh (`~/.zshrc`):**
+    ```zsh
+    source /path/to/shelllm/zsh_rc.sh
+    ```
 
 ### Usage
 
-- **Start the background server:**
-  ```bash
-  make run
-  ```
-- **Querying:**
-  Currently, querying is handled via the internal query socket. CLI-based query tools are under development.
+1.  **Start the Daemon:**
+    The daemon must be running to capture history and answer queries.
+    ```bash
+    make run
+    ```
+    *Note: In production mode, the daemon runs silently.*
+
+2.  **Querying:**
+    Use the `slm` command to ask questions about your shell history.
+    ```bash
+    slm "how do I untar a file?"
+    slm why did my last docker build fail?
+    ```
+
+### Development
+
+To run the daemon with verbose logging enabled:
+
+```bash
+make dev
+```
 
 ## Maintenance
 
-To remove binaries and temporary socket files:
+To remove binaries and temporary socket files (but keep the downloaded libraries and model):
 
 ```bash
 make clean
